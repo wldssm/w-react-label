@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noImplicitThis": false, // this报错问题
+    "jsx": "react",
+    "baseUrl": "./",
+    "paths": {
+      "@@/*": [".dumi/tmp/*"],
+      "w-react-label": ["src"],
+      "w-react-label/*": ["src/*", "*"]
+    }
+  },
+  "include": [".dumirc.ts", "src/**/*", "typings.d.ts"]
+}
