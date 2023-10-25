@@ -2397,7 +2397,7 @@ const WDraw = forwardRef((props: any, ref) => {
   // 加载图片
   const loadImg = (src: string) => {
     if (!src) return false;
-
+    setCanvasSize();
     return new Promise((resolve) => {
       let img = new Image();
       img.onload = (e: any) => {
@@ -2410,19 +2410,19 @@ const WDraw = forwardRef((props: any, ref) => {
           imgScale = 1,
           { width: svgW, height: svgH } = shapeInfo.svg;
         // 超出
-        if (originW > svgW || originH > svgH) {
-          let boxRatio = svgW / svgH,
-            imgRatio = originW / originH;
-          if (boxRatio > imgRatio) {
-            curImgH = svgH;
-            curImgW = curImgH * imgRatio;
-            imgScale = originH / curImgH;
-          } else {
-            curImgW = svgW;
-            curImgH = curImgW / imgRatio;
-            imgScale = originW / curImgW;
-          }
+        // if (originW > svgW || originH > svgH) {
+        let boxRatio = svgW / svgH,
+          imgRatio = originW / originH;
+        if (boxRatio > imgRatio) {
+          curImgH = svgH;
+          curImgW = curImgH * imgRatio;
+          imgScale = originH / curImgH;
+        } else {
+          curImgW = svgW;
+          curImgH = curImgW / imgRatio;
+          imgScale = originW / curImgW;
         }
+        // }
         x = (svgW - curImgW) / 2;
         y = (svgH - curImgH) / 2;
         curImgInfo.current = { x, y, scale: imgScale, w: curImgW, h: curImgH };
@@ -2586,8 +2586,18 @@ const WDraw = forwardRef((props: any, ref) => {
 
         if (shape_type.indexOf('rect') >= 0) {
           // 矩形
-          const [[x, y], [x2, y2]] = points;
-          points = { x, y, width: Math.abs(x2 - x), height: Math.abs(y2 - y) };
+          const [[x, y], [x2, y2]] = points,
+            width = Math.abs(x2 - x),
+            height = Math.abs(y2 - y);
+          let curX = x,
+            curY = y;
+          if (curX > x2) {
+            curX = x2;
+          }
+          if (curY > y2) {
+            curY = y2;
+          }
+          points = { x: curX, y: curY, width, height };
           return { attrs: points, shape_type: 'rect', ...rest };
         } else if (shape_type === 'circle') {
           // 圆形
