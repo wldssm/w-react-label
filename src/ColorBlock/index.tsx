@@ -13,11 +13,11 @@ const WColorBlock = (props: any) => {
   }, []);
 
   // 切换颜色
-  const changeColor = (color: string) => {
+  const changeColor = (color: string, e: any) => {
     setCurColor(color);
 
     if (props.onChange) {
-      props.onChange(color);
+      props.onChange(color, e);
     }
   };
 
@@ -26,7 +26,7 @@ const WColorBlock = (props: any) => {
       {colorBlocks.map((item: string, index: any) => {
         return (
           <div
-            onClick={() => changeColor(item)}
+            onClick={(e) => changeColor(item, e)}
             className={`w-color-block ${item === curColor ? 'on' : ''}`}
             style={{ background: item }}
             key={index}

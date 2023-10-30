@@ -1,22 +1,19 @@
----
-hero:
-  title: library
-  description: react label
-  actions:
-    - text: Hello
-      link: /
-    - text: World
-      link: /
-features:
-  - title: Hello
-    emoji: 💎
-    description: Put hello description here
-  - title: World
-    emoji: 🌈
-    description: Put world description here
-  - title: '!'
-    emoji: 🚀
-    description: Put ! description here
----
+# 快速上手
 
-w-react-label
+svg 绘制矩形、正方形、椭圆形、圆形、多边形、路径。基于 react16+，不兼容 18+。
+
+## 安装
+
+```bash
+yarn add w-react-label
+```
+
+## 使用组件
+
+```bash
+import { WDraw } from 'w-react-label';
+
+export default () => {
+  return <WDraw drawTool="rect" />;
+};
+```

@@ -365,7 +365,11 @@ const WDraw = forwardRef((props: any, ref) => {
   };
 
   // 更新文本的位置
-  const updateLabel = (curNum: any, showLabel: boolean) => {
+  const updateLabel = (
+    curNum: any,
+    showLabel: boolean,
+    updateColor?: boolean,
+  ) => {
     if (!showLabel) return;
 
     let curScale = curTransform?.current?.k || 1,
@@ -398,6 +402,9 @@ const WDraw = forwardRef((props: any, ref) => {
     x = x * curScale || 0;
     y = y * curScale || 0;
     curShapeLabel.attr('x', x).attr('y', y);
+    if (updateColor) {
+      curShapeLabel.attr('fill', shapeInfo.font.fill);
+    }
   };
   const updateAllLabel = (force?: boolean) => {
     let showLabel = force ? props.showLabel : tempProps.current.showLabel;
@@ -987,7 +994,7 @@ const WDraw = forwardRef((props: any, ref) => {
       { showLabel }: any = tempProps.current;
     if (curShape.node()) {
       curShape.text(curLabel).attr('display', 'inline');
-      updateLabel(curNum, showLabel);
+      updateLabel(curNum, showLabel, true);
       return;
     }
     let curText = svgRoot.current
@@ -1760,7 +1767,7 @@ const WDraw = forwardRef((props: any, ref) => {
           if (!curShapePoints.current) {
             // 路径绘制完tool变更为move
             isPathing.current = false;
-            tempProps.current.changeTool('move');
+            // tempProps.current.changeTool('move');
           }
         } else if (!isSelect) {
           // 未拖动执行单击
@@ -2787,7 +2794,7 @@ const WDraw = forwardRef((props: any, ref) => {
       loadImg(props.src);
     }
     if (props.drawTool !== tempProps.current.drawTool) {
-      switchDrawTool(props.src);
+      switchDrawTool(props.drawTool);
       toggleCrosshair(props.showCrosshair);
     }
     if (props.showLabel !== tempProps.current.showLabel) {
@@ -2853,7 +2860,7 @@ WDraw.defaultProps = {
   minSize: [4, 4], // 误触尺寸，小于它的直接删除
   drawTool: '', // 默认绘制工具（rect、ellipse、path、move、drag）
   scaleExtent: [0.02, 30], // 图形缩放比例阀值
-  changeTool: () => {}, // 变更工具
+  // changeTool: () => { }, // 变更工具
   changeSize: () => {}, // 尺寸、位置发生变化
   changeSelect: () => {}, // 选中、正在编辑的图形id
   changeScale: () => {}, // 修改画布scale
