@@ -424,7 +424,7 @@ const WDraw = forwardRef((props: any, ref) => {
   };
   // 记录移动操作前的数据
   const recordBeforeMove = () => {
-    let recordData = [],
+    let recordData: any = [],
       curJson: any = {};
     if (selectShapeIds.current) {
       let curDom: any = {};
@@ -434,7 +434,7 @@ const WDraw = forwardRef((props: any, ref) => {
         curDom[item] = curShape;
       });
       recordData = [selectShapeIds.current, curJson, curDom];
-    } else {
+    } else if (curShape.current) {
       let curNum = curShape.current?.attr('id')?.substring(6);
       curJson[curNum] = JSON.parse(
         JSON.stringify(allShapeJson.current[curNum]),
@@ -926,6 +926,7 @@ const WDraw = forwardRef((props: any, ref) => {
   // 移动图形
   const moveShape = (diff: any, e: any, targetP?: any) => {
     let target = targetP || curShape.current;
+    if (!target) return;
 
     let { showLabel }: any = tempProps.current,
       [diffX, diffY] = diff,
@@ -1333,8 +1334,8 @@ const WDraw = forwardRef((props: any, ref) => {
     let { drawTool } = tempProps.current;
     if (!drawTool || event.defaultPrevented) return;
 
-    console.log('');
-    console.log(1, type, '----click select');
+    // console.log('');
+    // console.log(1, type, '----click select');
 
     // 单击控制点，切换控制点选中状态
     if (type === 'grip') {
@@ -2125,10 +2126,9 @@ const WDraw = forwardRef((props: any, ref) => {
   // 画布获取、失去焦点
   const focus = (status: boolean) => {
     if (status) {
-      d3.select('body').on('keydown', keydown);
       d3.select('body').on('keyup', keyup);
     } else {
-      d3.select('body').on('keydown keyup', null);
+      d3.select('body').on('keyup', null);
       isCtrlKey.current = false;
       isAltKey.current = false;
       isShiftKey.current = false;
@@ -2586,9 +2586,9 @@ const WDraw = forwardRef((props: any, ref) => {
     let newArr: any = [];
     try {
       newArr = sizeArr.map((item: any, index: number) => {
+        item = { ...item, id: `${index + 1}` };
         if (item?.attrs) return item;
 
-        item['id'] = `${index + 1}`;
         let { points, shape_type, ...rest } = item;
 
         if (shape_type.indexOf('rect') >= 0) {
@@ -2781,7 +2781,7 @@ const WDraw = forwardRef((props: any, ref) => {
       // window.addEventListener('mouseup', outMouseup);
     }
     return () => {
-      d3.select('body').on('keydown keyup', null);
+      d3.select('body').on('keyup', null);
       window.removeEventListener('resize', setCanvasSize);
       // window.removeEventListener('touchend', outMouseup);
       // window.removeEventListener('mouseup', outMouseup);
@@ -2814,6 +2814,7 @@ const WDraw = forwardRef((props: any, ref) => {
   useImperativeHandle(ref, () => {
     return {
       zoomReload, // 缩放回到初始状态
+      loadImg, // 加载图片
       clearShape, // 清空图形
       toggleShape, // 切换图形显示隐藏
       getMarkData, // 获取图形数据
@@ -2839,6 +2840,7 @@ const WDraw = forwardRef((props: any, ref) => {
     <div
       ref={getCurDom}
       className={`w-draw-container ${tempProps.current.className || ''}`}
+      onKeyDown={keydown}
     >
       <div
         id="svgcanvas"
