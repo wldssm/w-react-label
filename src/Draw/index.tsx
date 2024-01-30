@@ -11,6 +11,7 @@ import * as d3 from 'd3';
 import {
   dirArr,
   dragGrip,
+  getRandomColor,
   isTouchEvent,
   pointToLineDistance,
   shapeInfo,
@@ -22,7 +23,7 @@ type func = (...param: any) => any;
 
 const WDraw = forwardRef((props: any, ref) => {
   // let { className, src, drawTool, scaleExtent } = props;
-  let tempProps: any = useRef(props),
+  let tempProps: any = useRef(props), // 最新的
     curDom: any = useRef(null), // 当前根dom
     // svg元素
     svgRoot: any = useRef(null),
@@ -51,6 +52,7 @@ const WDraw = forwardRef((props: any, ref) => {
     // json记录(label、points、shape_type)
     allShapeJson: any = useRef({}), // 所有已绘制图形的坐标尺寸数据
     curShapePoints: any = useRef(null), // 当前正在绘制的图形的坐标尺寸数据
+    labelColorJson: any = useRef({}), // 标签绑定的颜色
     // 操作记录
     undoStack: any = useRef([]), // 撤销栈
     redoStack: any = useRef([]); // 重做栈（重做的是最新的连续的撤销操作）
@@ -332,36 +334,78 @@ const WDraw = forwardRef((props: any, ref) => {
     }
   };
 
+  // 设置绘制图形颜色（指定标签）
+  const setDrawColor = (labelParam?: any) => {
+    const { curLabel, colorBindLabel }: any = tempProps.current,
+      tempLabel = labelParam || curLabel;
+
+    if (colorBindLabel) {
+      const curLabelColor =
+        labelColorJson.current[tempLabel] ||
+        getRandomColor(labelColorJson.current);
+      shapeInfo.shapeCommon.stroke = curLabelColor;
+      shapeInfo.font.fill = curLabelColor;
+      if (labelParam) {
+        labelColorJson.current[tempLabel] = curLabelColor;
+      }
+    }
+  };
   // 设置蒙版颜色
   const setMaskColor = (colorP: string) => {
     const color = colorP || shapeInfo.shapeCommon.stroke;
     return d3.color(color).copy({ opacity: 0.2 });
   };
+  // 切换单个元素的颜色
+  const changeSingleShapeColor = (id: any, color: string) => {
+    const tempShape = d3.select(`#shape-${id}`);
+    tempShape.attr('stroke', color);
+    if (tempProps.current.showLabel) {
+      svgRoot.current.select(`#shape-label-${id}`).attr('fill', color);
+    }
+
+    if (maskShapeId.current === 'shape-' + id) {
+      tempShape.attr('fill', setMaskColor(color));
+    }
+  };
   // 切换色块（改变当前和以后的绘制）
   const changeColor = (color: string) => {
+    const { colorBindLabel, curLabel: lastLabel } = tempProps.current;
+    if (colorBindLabel) {
+      if (selectShapeIds.current || !curShape.current) return;
+
+      const curId = curShape.current.attr('id')?.substring(6),
+        { label: curLabel } = allShapeJson.current?.[curId],
+        lastLabelColor = labelColorJson.current[lastLabel];
+
+      // 同标签变色
+      Object.keys(allShapeJson.current)?.forEach((item) => {
+        const { label } = allShapeJson.current[item];
+        if (label === curLabel) {
+          changeSingleShapeColor(item, color);
+        }
+      });
+      if (lastLabelColor) {
+        shapeInfo.shapeCommon.stroke = lastLabelColor;
+        shapeInfo.font.fill = lastLabelColor;
+      }
+      labelColorJson.current[curLabel] = color;
+      tempProps.current.changeBindColor(labelColorJson.current);
+      return;
+    }
+
     shapeInfo.shapeCommon.stroke = color;
     shapeInfo.font.fill = color;
 
     if (selectShapeIds.current) {
       selectShapeIds.current?.forEach((item: any) => {
-        d3.select(`#shape-${item}`).attr('stroke', color);
-        if (tempProps.current.showLabel) {
-          svgRoot.current.select(`#shape-label-${item}`).attr('fill', color);
-        }
+        changeSingleShapeColor(item, color);
       });
       return;
     }
-    if (!curShape.current) return;
 
-    if (tempProps.current.showLabel) {
-      let curId = curShape.current.attr('id')?.substring(6);
-      svgRoot.current.select(`#shape-label-${curId}`).attr('fill', color);
-    }
-    if (maskShapeId.current) {
-      curShape.current.attr('stroke', color).attr('fill', setMaskColor(color));
-      return;
-    }
-    curShape.current.attr('stroke', color);
+    if (!curShape.current) return;
+    const curId = curShape.current.attr('id')?.substring(6);
+    changeSingleShapeColor(curId, color);
   };
 
   // 更新文本的位置
@@ -1202,7 +1246,11 @@ const WDraw = forwardRef((props: any, ref) => {
     }
 
     let curNum = curShape.current.attr('id')?.substring('6'), // 当前默认编号
-      { curLabel }: any = tempProps.current;
+      { curLabel, colorBindLabel }: any = tempProps.current;
+    if (colorBindLabel && curLabel && !labelColorJson.current[curLabel]) {
+      labelColorJson.current[curLabel] = shapeInfo.shapeCommon.stroke;
+      tempProps.current.changeBindColor(labelColorJson.current);
+    }
     curLabel = curLabel || curNum;
     allShapeJson.current[curNum] = {
       shape_type: close ? 'polygon' : 'line',
@@ -1270,6 +1318,8 @@ const WDraw = forwardRef((props: any, ref) => {
       isPathing.current = true;
       delEditStatus();
       d3.select('#path-stretch-line')?.attr('display', 'inline');
+      // 设置颜色
+      setDrawColor();
       let shapeAttrs = Object.assign(
         {},
         shapeInfo.shapeCommon,
@@ -1440,8 +1490,12 @@ const WDraw = forwardRef((props: any, ref) => {
     let ifMini = delShapeIfMini();
     if (ifMini) return false;
 
-    let { drawTool, curLabel }: any = tempProps.current,
+    let { drawTool, curLabel, colorBindLabel }: any = tempProps.current,
       curNum = getCurNum(); // 当前默认编号
+    if (colorBindLabel && curLabel && !labelColorJson.current[curLabel]) {
+      labelColorJson.current[curLabel] = shapeInfo.shapeCommon.stroke;
+      tempProps.current.changeBindColor(labelColorJson.current);
+    }
     curLabel = curLabel || curNum;
     curShape.current.attr('id', `shape-${curNum}`);
 
@@ -1919,6 +1973,8 @@ const WDraw = forwardRef((props: any, ref) => {
       .append(drawTool)
       .call(initDrag('shape', dragChange));
 
+    // 设置颜色
+    setDrawColor();
     let shapeAttrs = Object.assign(
         {},
         shapeInfo.shapeCommon,
@@ -2368,6 +2424,13 @@ const WDraw = forwardRef((props: any, ref) => {
     svgRoot.current.selectAll('#shape *')?.remove();
     svgRoot.current.selectAll('#shape-label-group *')?.attr('display', 'none');
   };
+  // 全部重置
+  const reload = () => {
+    svgCont.current.select('g#img').select('image')?.remove();
+    clearShape();
+    zoomReload();
+  };
+
   // 显示隐藏图形
   const toggleShape = (id: any) => {
     let { hide } = allShapeJson.current[id],
@@ -2506,9 +2569,28 @@ const WDraw = forwardRef((props: any, ref) => {
   };
   // 修改图形标签
   const editLabel = (id: any, newLabel: any) => {
+    if (!allShapeJson.current[id]) return;
     allShapeJson.current[id].label = newLabel;
     svgRoot.current.select(`#shape-label-${id}`).text(newLabel);
     tempProps.current.changeSize(getMarkData());
+
+    const { colorBindLabel, curLabel } = tempProps.current;
+    if (colorBindLabel) {
+      let curColor = '',
+        update = labelColorJson.current[newLabel];
+      if (!curLabel) {
+        curColor = shapeInfo.shapeCommon.stroke;
+      } else {
+        curColor =
+          labelColorJson.current[newLabel] ||
+          getRandomColor(labelColorJson.current);
+      }
+      changeSingleShapeColor(id, curColor);
+      if (!update) {
+        labelColorJson.current[newLabel] = curColor;
+        tempProps.current.changeBindColor(labelColorJson.current);
+      }
+    }
   };
 
   // 修改画布缩放（enlarge、narrow、具体数值）
@@ -2683,7 +2765,8 @@ const WDraw = forwardRef((props: any, ref) => {
             .append(shape_type)
             .attr('id', `shape-${id}`)
             .call(initDrag('shape', dragChange));
-
+          // 设置颜色
+          setDrawColor(label);
           let shapeAttrs = Object.assign(
             {},
             shapeInfo.shapeCommon,
@@ -2713,6 +2796,8 @@ const WDraw = forwardRef((props: any, ref) => {
           if (!id) {
             id = getCurNum();
           }
+          // 设置颜色
+          setDrawColor(label);
           let { points } = attrs,
             curLen = points.length,
             curShape = shapeBox
@@ -2750,6 +2835,7 @@ const WDraw = forwardRef((props: any, ref) => {
         item.id = id;
         updateFromSize(id, shape_type, label, hide, newAttrs);
       });
+      tempProps.current.changeBindColor(labelColorJson.current);
       if (update) {
         tempProps.current.changeSize(sizeArr);
       }
@@ -2813,6 +2899,7 @@ const WDraw = forwardRef((props: any, ref) => {
 
   useImperativeHandle(ref, () => {
     return {
+      reload, // 全部重置
       zoomReload, // 缩放回到初始状态
       loadImg, // 加载图片
       clearShape, // 清空图形
@@ -2849,6 +2936,7 @@ const WDraw = forwardRef((props: any, ref) => {
         onFocus={() => focus(true)}
         onBlur={() => focus(false)}
       ></div>
+      {props?.children}
     </div>
   );
 });
@@ -2862,8 +2950,10 @@ WDraw.defaultProps = {
   minSize: [4, 4], // 误触尺寸，小于它的直接删除
   drawTool: '', // 默认绘制工具（rect、ellipse、path、move、drag）
   scaleExtent: [0.02, 30], // 图形缩放比例阀值
+  colorBindLabel: true, // 颜色跟标签绑定
   // changeTool: () => { }, // 变更工具
   changeSize: () => {}, // 尺寸、位置发生变化
+  changeBindColor: () => {}, // 颜色绑定标签时，标签颜色发生变化
   changeSelect: () => {}, // 选中、正在编辑的图形id
   changeScale: () => {}, // 修改画布scale
   imgLoaded: () => {}, // 图片加载完的回调

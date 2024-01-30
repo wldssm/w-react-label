@@ -125,6 +125,7 @@ const WShapeList = (props: any) => {
       } else {
         maxIndex.current = index;
       }
+      minIndex.current = minIndex.current < 0 ? 0 : minIndex.current;
       newSelectIds = [];
       for (let i = minIndex.current; i <= maxIndex.current; i++) {
         newSelectIds.push(shapeList[i]?.id);
