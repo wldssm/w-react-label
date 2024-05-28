@@ -2425,9 +2425,9 @@ const WDraw = forwardRef((props: any, ref) => {
     svgRoot.current.selectAll('#shape-label-group *')?.attr('display', 'none');
   };
   // 全部重置
-  const reload = () => {
+  const reload = (update = true) => {
     svgCont.current.select('g#img').select('image')?.remove();
-    clearShape();
+    clearShape(update);
     zoomReload();
   };
 
