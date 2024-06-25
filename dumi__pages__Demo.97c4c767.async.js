@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkw_react_label=self.webpackChunkw_react_label||[]).push([[448],{12535:function(f,a,e){e.r(a),e.d(a,{default:function(){return u}});var n=e(49777),r=e(67294),o=function(){var d=(0,n.UO)(),m=d.id,s=(0,n.WF)(),c=s.demos,l=c[m]||{},t=l.component;return t&&(0,r.createElement)(t)},u=o}}]);
