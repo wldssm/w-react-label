@@ -1,5 +1,7 @@
 # w-react-label
 
+- **注: node 版本：V18.16.0**
+
 [![NPM version](https://img.shields.io/npm/v/w-react-label.svg?style=flat)](https://npmjs.org/package/w-react-label)
 [![NPM downloads](http://img.shields.io/npm/dm/w-react-label.svg?style=flat)](https://npmjs.org/package/w-react-label)
 
@@ -30,9 +32,6 @@ $ yarn run build:watch
 
 # build docs
 $ yarn run docs:build
-
-# check your project for potential problems
-$ yarn run doctor
 ```
 
 ## LICENSE

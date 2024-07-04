@@ -15,7 +15,7 @@ Demo
 import { WDraw } from 'w-react-label';
 
 export default () => {
-  return <WDraw drawTool="rect" />;
+  return <WDraw drawTool="rect" rotateEnable={true} />;
 };
 ```
 
@@ -39,6 +39,7 @@ export default () => {
 | changeScale   | 修改画布 scale                       | function(scale)                                                                                                                                                           | -             |
 | imgLoaded     | 图片加载完的回调                     | function({width, height})                                                                                                                                                 | -             |
 | endDraw       | 绘制完一个图形的回调                 | function({id, label})                                                                                                                                                     | -             |
+| rotateEnable  | 允许旋转图形                         | boolean                                                                                                                                                                   | false         |
 
 ### WDraw
 

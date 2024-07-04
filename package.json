@@ -1,6 +1,6 @@
 {
   "name": "w-react-label",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "description": "react-label",
   "license": "MIT",
   "main": "dist/index.ts",
@@ -13,6 +13,7 @@
   "scripts": {
     "build": "father build",
     "build:watch": "father dev",
+    "deploy": "yarn docs:build && gh-pages -d docs-dist",
     "dev": "dumi dev",
     "docs:build": "dumi build",
     "doctor": "father doctor",
@@ -59,6 +60,7 @@
     "dumi": "^2.2.9",
     "eslint": "^8.23.0",
     "father": "^4.1.0",
+    "gh-pages": "^6.1.1",
     "husky": "^8.0.1",
     "lint-staged": "^13.0.3",
     "prettier": "^2.7.1",

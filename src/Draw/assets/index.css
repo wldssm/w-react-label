@@ -14,3 +14,7 @@
   left: 0;
   background: #3e6391;
 }
+
+.w-svg-box .w-svg-rotate {
+  cursor: url('./rotate.png') 12 12, auto;
+}

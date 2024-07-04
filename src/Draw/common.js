@@ -43,6 +43,22 @@ export const shapeInfo = {
     'dominant-baseline': 'text-after-edge',
   },
   pathAddPoint: { fill: 'none', stroke: 'rgba(0,0,0,0)', 'stroke-width': 25 }, // 添加顶点的边框
+  rotateLine: {
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 0,
+    stroke: 'rgba(0,0,255,.45)',
+    'stroke-width': 1,
+  }, // 旋转的线
+  rotateCircle: {
+    cx: 0,
+    cy: 0,
+    r: 5,
+    fill: 'rgba(0,0,255,.45)',
+    stroke: 'rgba(0, 0, 0, 0)',
+    'stroke-width': 6,
+  }, // 旋转的圆点
 };
 
 const colors = [
@@ -556,4 +572,50 @@ export const pointToLineDistance = (clickPosi, lineStart, lineEnd) => {
   }
 
   return Math.sqrt(dx * dx + dy * dy);
+};
+
+// 一个点相对另一个点旋转前、后的坐标
+export const getAfterRotate = (x, y, centerX, centerY, rotateAngle, origin) => {
+  let curRotate = (rotateAngle * Math.PI) / 180;
+  if (origin) {
+    curRotate = -curRotate;
+  }
+  const cos = Math.cos(curRotate),
+    sin = Math.sin(curRotate);
+
+  const diffX = x - centerX;
+  const diffY = y - centerY;
+
+  const newX = diffX * cos - diffY * sin + centerX;
+  const newY = diffX * sin + diffY * cos + centerY;
+
+  return [newX, newY];
+};
+// 更新旋转后的坐标差值
+export const getRotateCenterDiff = (
+  x,
+  y,
+  width,
+  height,
+  centerX1,
+  centerY1,
+  rotateAngle,
+  origin,
+) => {
+  const centerX2 = x + width / 2;
+  const centerY2 = y + height / 2;
+
+  const [newCenterX2, newCenterY2] = getAfterRotate(
+    centerX2,
+    centerY2,
+    centerX1,
+    centerY1,
+    rotateAngle,
+    origin,
+  );
+
+  const changeX = newCenterX2 - centerX2;
+  const changeY = newCenterY2 - centerY2;
+
+  return { changeX, changeY };
 };

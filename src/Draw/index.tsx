@@ -11,13 +11,15 @@ import * as d3 from 'd3';
 import {
   dirArr,
   dragGrip,
+  getAfterRotate,
   getRandomColor,
+  getRotateCenterDiff,
   isTouchEvent,
   pointToLineDistance,
   shapeInfo,
 } from './common.js';
 
-import './index.css';
+import './assets/index.css';
 
 type func = (...param: any) => any;
 
@@ -95,7 +97,7 @@ const WDraw = forwardRef((props: any, ref) => {
 
   // 获取d3鼠标相对容器的坐标的坐标
   const getD3Posi = (event: any) => {
-    let e = event?.sourceEvent || event;
+    const e = event?.sourceEvent || event;
     let posi = [];
 
     if (isTouchEvent(e)) {
@@ -167,15 +169,58 @@ const WDraw = forwardRef((props: any, ref) => {
     return false;
   };
 
+  // 获取旋转中心点（尺寸没变化时）
+  const getRotateCenter = (id: any) => {
+    const curShape = d3.select(`#shape-${id}`);
+    if (!curShape) return {};
+
+    const attrs = curShape?.node()?.getBBox(), // 获取图形的尺寸坐标
+      curScale = curTransform?.current?.k || 1,
+      { x, y, width, height } = attrs,
+      centerX = x + width / 2, // 图形的中心
+      centerY = y + height / 2,
+      gripCenterX = centerX * curScale, // 图形控制点的中心
+      gripCenterY = centerY * curScale;
+
+    return { centerX, centerY, gripCenterX, gripCenterY };
+  };
+  // 获取旋转差值（尺寸变化时）
+  const updateRotateCenter = () => {
+    if (!curShape.current) return;
+
+    const curId = curShape.current.attr('id')?.substring(6);
+    const curRotate = allShapeJson.current[curId]?.rotate;
+    if (!curRotate) return;
+
+    const [rotateAngle, curCenterX, curCenterY] = curRotate,
+      attrs = curShape.current?.node()?.getBBox(), // 获取图形的尺寸坐标
+      { x, y, width, height } = attrs;
+
+    const { changeX, changeY } = getRotateCenterDiff(
+      x,
+      y,
+      width,
+      height,
+      curCenterX,
+      curCenterY,
+      rotateAngle,
+    );
+    // console.log(changeX, changeY);
+    moveSelectShape([changeX, changeY]);
+    return [changeX, changeY];
+  };
+
   // 更新控制点位置（selection）
   const updateGrip = () => {
-    if (!curShape.current || isPathing.current || editPathId.current)
+    if (!curShape.current || isPathing.current || editPathId.current) {
       return false;
+    }
 
-    let curId = curShape.current.attr('id')?.substring(6),
-      { hide } = allShapeJson.current?.[curId] || false;
+    const curId = curShape.current.attr('id')?.substring(6),
+      { hide, rotate } = allShapeJson.current?.[curId],
+      gripGroupEl = d3.select('#shape-grip-group');
 
-    d3.select('#shape-grip-group').attr('display', hide ? 'none' : 'inline');
+    gripGroupEl.attr('display', hide ? 'none' : 'inline');
     if (hide) return;
 
     let curScale = curTransform?.current?.k || 1,
@@ -190,8 +235,41 @@ const WDraw = forwardRef((props: any, ref) => {
     width = width * curScale || 0;
     height = height * curScale || 0;
 
+    // 更新旋转
+    if (tempProps.current.rotateEnable) {
+      // 旋转图标
+      const rX = x + width / 2;
+      gripGroupEl
+        .select('#rotate-line')
+        .attr('x1', rX)
+        .attr('y1', y - 4)
+        .attr('x2', rX)
+        .attr('y2', y - 16);
+      gripGroupEl
+        .select('#rotate-circle')
+        .attr('cx', rX)
+        .attr('cy', y - 20);
+    }
+    // 旋转中心点
+    if (rotate) {
+      const [rotateAngle, centerX, centerY] = rotate,
+        gripCenterX = centerX * curScale, // 图形控制点的中心
+        gripCenterY = centerY * curScale;
+
+      gripGroupEl.attr(
+        'transform',
+        `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
+      );
+      curShape.current.attr(
+        'transform',
+        `rotate(${rotateAngle} ${centerX},${centerY})`,
+      );
+    } else {
+      gripGroupEl.attr('transform', null);
+    }
+
     // 线
-    let points = [
+    const points = [
         [x, y],
         [x + width, y],
         [x + width, y + height],
@@ -200,28 +278,36 @@ const WDraw = forwardRef((props: any, ref) => {
       pointString = lineCreater.current(points);
     d3.select('#resize-path').attr('d', pointString + 'Z');
     // 点
-    d3.select('#resize-grip-nw')
+    gripGroupEl
+      .select('#resize-grip-nw')
       .attr('x', x - gWidth)
       .attr('y', y - gHeight);
-    d3.select('#resize-grip-n')
+    gripGroupEl
+      .select('#resize-grip-n')
       .attr('x', x + width / 2 - gWidth)
       .attr('y', y - gHeight);
-    d3.select('#resize-grip-ne')
+    gripGroupEl
+      .select('#resize-grip-ne')
       .attr('x', x + width - gWidth)
       .attr('y', y - gHeight);
-    d3.select('#resize-grip-w')
+    gripGroupEl
+      .select('#resize-grip-w')
       .attr('x', x - gWidth)
       .attr('y', y + height / 2 - gHeight);
-    d3.select('#resize-grip-e')
+    gripGroupEl
+      .select('#resize-grip-e')
       .attr('x', x + width - gWidth)
       .attr('y', y + height / 2 - gHeight);
-    d3.select('#resize-grip-sw')
+    gripGroupEl
+      .select('#resize-grip-sw')
       .attr('x', x - gWidth)
       .attr('y', y + height - gHeight);
-    d3.select('#resize-grip-s')
+    gripGroupEl
+      .select('#resize-grip-s')
       .attr('x', x + width / 2 - gWidth)
       .attr('y', y + height - gHeight);
-    d3.select('#resize-grip-se')
+    gripGroupEl
+      .select('#resize-grip-se')
       .attr('x', x + width - gWidth)
       .attr('y', y + height - gHeight);
   };
@@ -276,7 +362,7 @@ const WDraw = forwardRef((props: any, ref) => {
   const updatePoint = (e?: any) => {
     if (!curShape.current || !curShape.current.attr('id')) return false;
 
-    let curId = curShape.current.attr('id')?.substring(6),
+    const curId = curShape.current.attr('id')?.substring(6),
       points =
         allShapeJson.current?.[curId]?.attrs?.points ||
         curShapePoints.current ||
@@ -295,11 +381,34 @@ const WDraw = forwardRef((props: any, ref) => {
 
       x = x * curScale;
       y = y * curScale;
-      curEl.attr('cx', x).attr('cy', y).attr('display', 'inline');
+      curEl.attr('cx', x).attr('cy', y);
+      if (isPathing.current || editPathId.current) {
+        curEl.attr('display', 'inline');
+      }
     }
     // 调整射线
     if (e) {
       updateStretchLine(e);
+    }
+
+    // 更新旋转中心点
+    if (isPathing.current) return;
+    const { rotate } = allShapeJson.current?.[curId];
+    if (rotate) {
+      const [rotateAngle, centerX, centerY] = rotate,
+        gripCenterX = centerX * curScale, // 图形控制点的中心
+        gripCenterY = centerY * curScale,
+        newRotate = `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`;
+
+      d3.select('#path-point-group').attr('transform', newRotate);
+      d3.select('#path-add-point').attr('transform', newRotate);
+      curShape.current.attr(
+        'transform',
+        `rotate(${rotateAngle} ${centerX},${centerY})`,
+      );
+    } else {
+      d3.select('#path-point-group').attr('transform', null);
+      d3.select('#path-add-point').attr('transform', null);
     }
   };
 
@@ -417,7 +526,7 @@ const WDraw = forwardRef((props: any, ref) => {
     if (!showLabel) return;
 
     let curScale = curTransform?.current?.k || 1,
-      { shape_type, attrs } = allShapeJson.current[curNum],
+      { shape_type, attrs, rotate } = allShapeJson.current[curNum],
       curShapeLabel = svgRoot.current.select(`#shape-label-${curNum}`),
       x = 0,
       y = 0;
@@ -448,6 +557,18 @@ const WDraw = forwardRef((props: any, ref) => {
     curShapeLabel.attr('x', x).attr('y', y);
     if (updateColor) {
       curShapeLabel.attr('fill', shapeInfo.font.fill);
+    }
+
+    // 更新旋转中心点
+    if (rotate) {
+      const [rotateAngle, centerX, centerY] = rotate,
+        gripCenterX = centerX * curScale, // 图形控制点的中心
+        gripCenterY = centerY * curScale;
+
+      curShapeLabel.attr(
+        'transform',
+        `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
+      );
     }
   };
   const updateAllLabel = (force?: boolean) => {
@@ -490,25 +611,30 @@ const WDraw = forwardRef((props: any, ref) => {
   // 修改位置、尺寸前记录初始数据
   const recordStartInfo = (e: any) => {
     let curShapeId = curShape.current?.attr('id')?.substring(6),
-      { attrs, shape_type } = allShapeJson.current?.[curShapeId];
+      { attrs, shape_type, rotate } = allShapeJson.current?.[curShapeId];
 
     startInfo.current = attrs;
     if (shape_type === 'polygon' || shape_type === 'line') {
       startInfo.current.boundRect = curShape.current?.node()?.getBBox();
       startInfo.current.close = shape_type === 'polygon';
     }
-
-    [startInfo.current.mx, startInfo.current.my] = getD3Posi(e); // 鼠标位置
+    // 计算旋转后的坐标
+    let posi = getD3Posi(e); // 鼠标位置
+    if (rotate) {
+      const [rotateAngle, curCenterX, curCenterY] = rotate;
+      posi = getAfterRotate(...posi, curCenterX, curCenterY, rotateAngle, true);
+    }
+    [startInfo.current.mx, startInfo.current.my] = posi;
   };
 
   // 获取外部需要的标注数据（相对于图片）
   const getMarkData = () => {
     // console.log(allShapeJson.current);
-    let shapeIds = Object.keys(allShapeJson.current),
+    const shapeIds = Object.keys(allShapeJson.current),
       res: any = [],
       { x: imgX, y: imgY, scale: imgScale } = curImgInfo.current;
     shapeIds?.forEach((shapeId: any) => {
-      let { attrs, label, shape_type, hide }: any =
+      const { attrs, label, shape_type, hide, rotate }: any =
           allShapeJson.current[shapeId],
         curAttrs: any = {};
 
@@ -517,6 +643,9 @@ const WDraw = forwardRef((props: any, ref) => {
       curAttrs['attrs'] = {};
       curAttrs['hide'] = hide || false;
       curAttrs['id'] = shapeId;
+      if (rotate) {
+        curAttrs['rotate'] = rotate[0];
+      }
 
       if (shape_type === 'rect') {
         curAttrs['attrs']['x'] = (attrs['x'] - imgX) * imgScale;
@@ -547,9 +676,9 @@ const WDraw = forwardRef((props: any, ref) => {
 
   // 动态设置光标（default箭头、pointer手、crosshair十字、move、grab拖拽手）（注：鼠标按下后无法修改cursor）
   const setCursor = (event: any) => {
-    let target = event?.target || event?.srcElement,
-      curShapeId = d3.select(target).attr('id'),
-      curCursor = null,
+    const target = event?.target || event?.srcElement,
+      curShapeId = d3.select(target).attr('id');
+    let curCursor = null,
       { drawTool }: any = tempProps.current;
 
     if (selectedGripId.current || selectedPointId.current) {
@@ -584,7 +713,7 @@ const WDraw = forwardRef((props: any, ref) => {
     svgRoot.current.select('#crosshair-h-line').attr('y', e.layerY);
   };
 
-  // 添加多选外框
+  // 添加多选外框（0开始）
   const addSelectPath = (index: any) => {
     let curShapePath = d3.select(`#shape-path-group #shape-path-${index}`);
     if (!curShapePath.node()) {
@@ -598,13 +727,13 @@ const WDraw = forwardRef((props: any, ref) => {
         curShapePath.attr(key, lineAttrs[key]);
       });
     } else {
-      curShapePath.attr('display', 'inline');
+      curShapePath.attr('display', 'inline').attr('transform', null);
     }
     return curShapePath;
   };
   // 更新选中图形的外框
   const updateSelectPath = () => {
-    let curScale = curTransform?.current?.k || 1;
+    const curScale = curTransform?.current?.k || 1;
     selectShapeIds.current?.forEach((item: any, index: any) => {
       let curShape = d3.select(`#shape-${item}`),
         { x, y, width, height } = curShape.node().getBBox(),
@@ -615,7 +744,7 @@ const WDraw = forwardRef((props: any, ref) => {
       width = width * curScale || 0;
       height = height * curScale || 0;
 
-      let points = [
+      const points = [
           [x - 2, y - 2],
           [x + width + 2, y - 2],
           [x + width + 2, y + height + 2],
@@ -623,6 +752,23 @@ const WDraw = forwardRef((props: any, ref) => {
         ],
         pointString = lineCreater.current(points);
       curShapePath.attr('d', pointString + 'Z');
+
+      // 更新旋转中心点
+      const { rotate } = allShapeJson.current?.[item];
+      if (rotate) {
+        const [rotateAngle, centerX, centerY] = rotate,
+          gripCenterX = centerX * curScale, // 图形控制点的中心
+          gripCenterY = centerY * curScale;
+
+        curShape.attr(
+          'transform',
+          `rotate(${rotateAngle} ${centerX},${centerY})`,
+        );
+        curShapePath.attr(
+          'transform',
+          `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
+        );
+      }
     });
   };
 
@@ -719,12 +865,11 @@ const WDraw = forwardRef((props: any, ref) => {
       target.attr('fill', setMaskColor(target.attr('stroke')));
       if (shape_type === 'line' || shape_type === 'polygon') {
         editPathId.current = curTargetId;
-        d3.selectAll('#shape-grip-group')?.attr('display', 'none');
+        svgRoot.current
+          .selectAll('#path-point-group circle,#shape-grip-group')
+          ?.attr('display', 'none');
         if (hide) {
-          d3.selectAll('#path-point-group circle,#path-add-point').attr(
-            'display',
-            'none',
-          );
+          svgRoot.current.select('#path-add-point')?.attr('display', 'none');
         } else {
           svgRoot.current.select('#path-add-point')?.attr('display', 'inline');
           updatePoint();
@@ -832,7 +977,7 @@ const WDraw = forwardRef((props: any, ref) => {
 
   // 根据数据修改图形大小、位置
   const editShapeFromJson = (target: any, curJson: any) => {
-    let { shape_type, attrs } = curJson;
+    let { shape_type, attrs, rotate } = curJson;
     if (shape_type === 'rect' || shape_type === 'ellipse') {
       let curAttrs = Object.keys(attrs);
       curAttrs?.forEach((item) => {
@@ -845,6 +990,15 @@ const WDraw = forwardRef((props: any, ref) => {
         pointString += 'Z';
       }
       target.attr('d', pointString);
+    }
+
+    if (rotate) {
+      target.attr(
+        'transform',
+        `rotate(${rotate[0]} ${rotate[1]},${rotate[2]})`,
+      );
+    } else {
+      target.attr('transform', null);
     }
   };
 
@@ -968,14 +1122,18 @@ const WDraw = forwardRef((props: any, ref) => {
   };
 
   // 移动图形
-  const moveShape = (diff: any, e: any, targetP?: any) => {
-    let target = targetP || curShape.current;
+  const moveShape = (diff: any, targetP?: any) => {
+    const target = targetP || curShape.current;
     if (!target) return;
 
     let { showLabel }: any = tempProps.current,
       [diffX, diffY] = diff,
       curShapeId = target?.attr('id')?.substring(6),
-      { attrs: startInfo, shape_type } = allShapeJson.current[curShapeId],
+      {
+        attrs: startInfo,
+        shape_type,
+        rotate,
+      } = allShapeJson.current[curShapeId],
       finalBox = {};
 
     if (shape_type === 'rect') {
@@ -1011,26 +1169,34 @@ const WDraw = forwardRef((props: any, ref) => {
       newPoints = null;
     }
 
+    // 更新旋转中心
+    if (rotate) {
+      const { x, y, width, height } = target?.node()?.getBBox(),
+        centerX = x + width / 2, // 图形的中心
+        centerY = y + height / 2;
+      allShapeJson.current[curShapeId].rotate[1] = centerX;
+      allShapeJson.current[curShapeId].rotate[2] = centerY;
+    }
     allShapeJson.current[curShapeId].attrs = finalBox;
     if (selectShapeIds.current) {
       updateSelectPath();
     } else if (shape_type === 'rect' || shape_type === 'ellipse') {
       updateGrip();
     } else {
-      updatePoint(e);
+      updatePoint();
     }
     updateLabel(curShapeId, showLabel);
     return;
   };
-  const moveSelectShape = (diff: any, e: any) => {
+  const moveSelectShape = (diff: any) => {
     if (selectShapeIds.current) {
       selectShapeIds.current?.forEach((item: any) => {
         let curShape = d3.select(`#shape-${item}`);
-        moveShape(diff, e, curShape);
+        moveShape(diff, curShape);
       });
       return;
     }
-    moveShape(diff, e);
+    moveShape(diff);
   };
 
   // 添加label文本
@@ -1058,6 +1224,45 @@ const WDraw = forwardRef((props: any, ref) => {
     updateLabel(curNum, showLabel);
   };
 
+  // 旋转图形
+  const rotateShape = (posi: any) => {
+    if (!curShape.current) return;
+
+    const curShapeId = curShape.current?.attr('id')?.substring(6),
+      { centerX, centerY, gripCenterX, gripCenterY } =
+        getRotateCenter(curShapeId),
+      diffX = posi[0] - centerX,
+      diffY = centerY - posi[1];
+    let rotateAngle = (Math.atan2(diffY, diffX) * 180) / Math.PI; // 两点之间的倾斜角。
+    // 正常坐标系（上90，右0，下-90，左180度），改为（上0，下180，左正，右负）
+    if (rotateAngle < -90) {
+      rotateAngle = -270 - rotateAngle;
+    } else {
+      rotateAngle = 90 - rotateAngle;
+    }
+
+    curShape.current.attr(
+      'transform',
+      `rotate(${rotateAngle} ${centerX},${centerY})`,
+    );
+    svgRoot.current
+      .select('#shape-grip-group')
+      .attr(
+        'transform',
+        `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
+      );
+    if (tempProps.current.showLabel) {
+      svgRoot.current
+        .select(`#shape-label-${curShapeId}`)
+        .attr(
+          'transform',
+          `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
+        );
+    }
+
+    allShapeJson.current[curShapeId].rotate = [rotateAngle, centerX, centerY];
+  };
+
   // 拖拽移动图形/整体、grip变更图形、point变更path
   const dragChange = (type: any, ...params: any) => {
     // console.log(8, type);
@@ -1070,7 +1275,21 @@ const WDraw = forwardRef((props: any, ref) => {
     if (type === 'moveGrip') {
       let curDir = '',
         curShapeId = curShape.current?.attr('id')?.substring(6),
-        { shape_type } = allShapeJson.current?.[curShapeId];
+        { shape_type, rotate } = allShapeJson.current?.[curShapeId];
+
+      // 获取旋转后的差值
+      if (rotate) {
+        const [rotateAngle, curCenterX, curCenterY] = rotate;
+        posi = getAfterRotate(
+          ...posi,
+          curCenterX,
+          curCenterY,
+          rotateAngle,
+          true,
+        );
+        diffX = posi[0] - startInfo.current.mx;
+        diffY = posi[1] - startInfo.current.my;
+      }
 
       if (selectedGripId.current) {
         curDir = selectedGripId.current.substring(12);
@@ -1101,12 +1320,21 @@ const WDraw = forwardRef((props: any, ref) => {
       allShapeJson.current[curShapeId].attrs = finalBox;
       updateGrip();
       updateLabel(curShapeId, tempProps.current.showLabel);
+
+      if (selectedGripId.current && rotate) {
+        updateRotateCenter();
+        d3.select('#' + selectedGripId.current).attr(
+          'fill',
+          shapeInfo['grip'].fill,
+        );
+        selectedGripId.current = null;
+      }
       return;
     }
 
     // 拖拽图形
     if (type === 'moveShape') {
-      moveSelectShape([e.dx, e.dy], e);
+      moveSelectShape([e.dx, e.dy]);
       return;
     }
 
@@ -1125,6 +1353,7 @@ const WDraw = forwardRef((props: any, ref) => {
           `translate(${curTransform.current?.x},${curTransform.current?.y})`,
         );
       updateGrid();
+      return;
     }
 
     // 拖动path的控制点
@@ -1135,6 +1364,7 @@ const WDraw = forwardRef((props: any, ref) => {
           attrs: { points },
           shape_type,
         } = allShapeJson.current[curShapeId],
+        curScale = curTransform?.current?.k || 1,
         close = shape_type === 'polygon' ? true : false;
 
       if (selectedPointId.current) {
@@ -1143,14 +1373,26 @@ const WDraw = forwardRef((props: any, ref) => {
         curIndex = curTarget.attr('id').substring(11);
       }
 
-      points[curIndex - 1] = posi;
+      // points[curIndex - 1] = posi;
+      // 更新旋转后坐标
+      let curPoint = points[curIndex - 1];
+      curPoint[0] = curPoint[0] + e.dx / curScale;
+      curPoint[1] = curPoint[1] + e.dy / curScale;
+      points[curIndex - 1] = curPoint;
 
       allShapeJson.current[curShapeId].attrs = { points };
-      let pointString = lineCreater.current(points);
+      const pointString = lineCreater.current(points);
       curShape.current.attr('d', pointString + (close ? 'Z' : ''));
 
-      updatePoint(e);
+      updatePoint();
       updateLabel(curShapeId, tempProps.current.showLabel);
+      return;
+    }
+
+    // 拖拽rotate旋转点
+    if (type === 'moveRotate') {
+      rotateShape(posi);
+      return;
     }
   };
 
@@ -1202,6 +1444,7 @@ const WDraw = forwardRef((props: any, ref) => {
       {
         attrs: { points },
         shape_type,
+        rotate,
       } = allShapeJson.current?.[curId],
       curLen = points.length,
       nearestIndex = -1, // 计算最近的边
@@ -1210,6 +1453,12 @@ const WDraw = forwardRef((props: any, ref) => {
 
     curJson[curId] = JSON.parse(JSON.stringify(allShapeJson.current[curId]));
     insertStack('edit', curShape.current, curJson);
+
+    // 获取旋转后的点
+    if (rotate) {
+      const [rotateAngle, curCenterX, curCenterY] = rotate;
+      posi = getAfterRotate(...posi, curCenterX, curCenterY, rotateAngle, true);
+    }
 
     for (let i = 0; i < curLen; i++) {
       let j = (i + 1) % curLen, // 下一个坐标
@@ -1230,10 +1479,13 @@ const WDraw = forwardRef((props: any, ref) => {
     }
     curShape.current.attr('d', pointString);
 
+    // 更新旋转中心
+    updateRotateCenter();
+
     let curPointId = `path-point-${curLen + 1}`;
     addPoint(curPointId, curLen);
 
-    updatePoint(event);
+    updatePoint();
   };
 
   // 完成path绘制（close是否闭合）
@@ -1306,7 +1558,7 @@ const WDraw = forwardRef((props: any, ref) => {
       return;
     }
 
-    let pointCont = d3.select('#path-point-group'),
+    let pointCont = d3.select('#path-point-group').attr('transform', null),
       oldPoints = pointCont.selectAll('circle'), // 此前path顶点最多的数量
       oldLen = oldPoints.size(),
       [x, y] = getD3Posi(e),
@@ -1347,7 +1599,7 @@ const WDraw = forwardRef((props: any, ref) => {
     }
 
     // 第一次绘制path，添加待确定的点跟随鼠标的连线
-    if (!oldLen) {
+    if (!oldLen || !pointCont.select('#path-stretch-line').size()) {
       pointCont
         .append('path')
         .attr('id', 'path-stretch-line')
@@ -1559,14 +1811,14 @@ const WDraw = forwardRef((props: any, ref) => {
         if (!curShapePath.node()) {
           curShapePath = addSelectPath(curLen);
         } else {
-          curShapePath.attr('display', 'inline');
+          curShapePath.attr('display', 'inline').attr('transform', null);
         }
         x = x * curScale || 0;
         y = y * curScale || 0;
         width = width * curScale || 0;
         height = height * curScale || 0;
 
-        let points = [
+        const points = [
             [x - 2, y - 2],
             [x + width + 2, y - 2],
             [x + width + 2, y + height + 2],
@@ -1574,8 +1826,20 @@ const WDraw = forwardRef((props: any, ref) => {
           ],
           pointString = lineCreater.current(points);
         curShapePath.attr('d', pointString + 'Z');
-      } else if (curShapePath.node()) {
-        curShapePath.attr('display', 'none');
+
+        // 更新旋转中心点
+        const { rotate } = allShapeJson.current?.[item];
+        if (rotate) {
+          const [rotateAngle, centerX, centerY] = rotate,
+            gripCenterX = centerX * curScale, // 图形控制点的中心
+            gripCenterY = centerY * curScale;
+          curShapePath.attr(
+            'transform',
+            `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
+          );
+        }
+      } else {
+        curShapePath?.attr('display', 'none');
       }
     });
     selectShapeIds.current = selectIds?.length && selectIds;
@@ -1629,6 +1893,10 @@ const WDraw = forwardRef((props: any, ref) => {
     if (eType === 'grip') {
       // 移动控制点
       return 'moveGrip';
+    }
+    if (eType === 'rotate') {
+      // 移动旋转点
+      return 'moveRotate';
     }
     if (eType === 'point' && !isPathing.current) {
       // 单击顶点
@@ -1732,10 +2000,12 @@ const WDraw = forwardRef((props: any, ref) => {
           // 移动记录初始数据（整体、单击拖拽点）
           if (curOpera === 'moveWhole') {
             curTransform.current = curTransform.current || d3.zoomIdentity;
+            [startInfo.current.mx, startInfo.current.my] = getD3Posi(event); // 鼠标位置
           } else if (curOpera === 'moveGrip') {
             recordStartInfo(event);
+          } else {
+            [startInfo.current.mx, startInfo.current.my] = getD3Posi(event); // 鼠标位置
           }
-          [startInfo.current.mx, startInfo.current.my] = getD3Posi(event); // 鼠标位置
         }
         // 记录移动操作前的数据
         if (
@@ -1812,6 +2082,10 @@ const WDraw = forwardRef((props: any, ref) => {
             curOpera.indexOf('move') >= 0 &&
             curOpera.length > 4
           ) {
+            // 更新旋转中心
+            if (curOpera === 'moveGrip' || curOpera === 'movePoint') {
+              updateRotateCenter();
+            }
             tempProps.current.changeSize(getMarkData());
             if (recordData) {
               insertStack('edit', ...recordData);
@@ -2171,7 +2445,7 @@ const WDraw = forwardRef((props: any, ref) => {
       insertStack('edit', ...recordData);
       recordData = null;
 
-      moveSelectShape([dx, dy], event);
+      moveSelectShape([dx, dy]);
     }
   };
   const keyup = (event: any) => {
@@ -2189,6 +2463,60 @@ const WDraw = forwardRef((props: any, ref) => {
       isAltKey.current = false;
       isShiftKey.current = false;
       outMouseup();
+    }
+  };
+
+  // 切换旋转功能
+  const toggleRotate = (rotateEnable: any) => {
+    let rLineEl = svgRoot.current?.select('#shape-grip-group #rotate-line');
+    let rCircleEl = svgRoot.current?.select('#shape-grip-group #rotate-circle');
+    if (rotateEnable) {
+      if (!rLineEl?.size()) {
+        // 线
+        rLineEl = svgRoot.current
+          .select('#shape-grip-group')
+          .append('line')
+          .attr('id', 'rotate-line')
+          .style('pointer-events', 'none');
+        const rLineAttrs = shapeInfo['rotateLine'];
+        Object.keys(rLineAttrs).forEach((key) => {
+          rLineEl.attr(key, rLineAttrs[key]);
+        });
+        // 圆点
+        rCircleEl = svgRoot.current
+          .select('#shape-grip-group')
+          .append('circle')
+          .attr('id', 'rotate-circle')
+          .attr('class', 'w-svg-rotate')
+          .call(initDrag('rotate', dragChange)); // 添加事件
+        const rCircleAttrs = shapeInfo['rotateCircle'];
+        Object.keys(rCircleAttrs).forEach((key) => {
+          rCircleEl.attr(key, rCircleAttrs[key]);
+        });
+      } else {
+        rLineEl.attr('display', 'inline');
+        rCircleEl.attr('display', 'inline');
+      }
+      // 更新位置
+      if (curShape.current) {
+        let curScale = curTransform?.current?.k || 1,
+          { x, y, width } = curShape.current?.node()?.getBBox();
+        // 手动调整scale
+        x = x * curScale || 0;
+        y = y * curScale || 0;
+        width = width * curScale || 0;
+        const rX = x + width / 2;
+
+        rLineEl
+          .attr('x1', rX)
+          .attr('y1', y - 4)
+          .attr('x2', rX)
+          .attr('y2', y - 16);
+        rCircleEl.attr('cx', rX).attr('cy', y - 20);
+      }
+    } else if (rLineEl?.size()) {
+      rLineEl.attr('display', 'none');
+      rCircleEl.attr('display', 'none');
     }
   };
 
@@ -2249,7 +2577,7 @@ const WDraw = forwardRef((props: any, ref) => {
     });
 
     // 单击多边形的隐形外框，用于单击添加顶点
-    let pathAddPoint = relatedGroup
+    const pathAddPoint = relatedGroup
         .append('path')
         .attr('id', 'path-add-point')
         .attr('display', 'none'),
@@ -2259,23 +2587,23 @@ const WDraw = forwardRef((props: any, ref) => {
     });
 
     // 3.2 创建拖拽图形的控制点和线（8个方向控制点、控制线path的顶点）
-    relatedGroup
+    const gripGroupEl = relatedGroup
       .append('g')
       .attr('class', 'grip-layer')
       .attr('id', 'shape-grip-group')
       .attr('display', 'none');
     // 3.2.1 添加控制线
-    d3.select('#shape-grip-group')
+    const resizePathEl = gripGroupEl
       .append('path')
       .attr('id', 'resize-path')
       .style('pointer-events', 'none');
-    let lineAttrs = shapeInfo['line'];
+    const lineAttrs = shapeInfo['line'];
     Object.keys(lineAttrs).forEach((key) => {
-      d3.select('#resize-path').attr(key, lineAttrs[key]);
+      resizePathEl.attr(key, lineAttrs[key]);
     });
     // 3.2.2 添加控制点
     for (let i = 0; i < 8; i++) {
-      d3.select('#shape-grip-group')
+      gripGroupEl
         .append('rect')
         .attr('id', 'resize-grip-' + dirArr[i])
         .style('cursor', dirArr[i] + '-resize');
@@ -2284,6 +2612,8 @@ const WDraw = forwardRef((props: any, ref) => {
     Object.keys(gripAttrs).forEach((key) => {
       d3.selectAll('#shape-grip-group rect').attr(key, gripAttrs[key]);
     });
+    // 3.2.3 添加旋转线、圆按钮
+    toggleRotate(props.rotateEnable);
 
     // 3.3 添加放置path的顶点
     relatedGroup
@@ -2513,6 +2843,10 @@ const WDraw = forwardRef((props: any, ref) => {
         tempProps.current.imgLoaded({ width: originW, height: originH });
         resolve(true);
       };
+      img.onerror = () => {
+        tempProps.current.imgLoaded(false);
+        resolve(false);
+      };
       img.src = src;
     });
   };
@@ -2721,9 +3055,16 @@ const WDraw = forwardRef((props: any, ref) => {
     label: string,
     hide: boolean,
     newAttrs: any,
+    newRotate: any,
   ) => {
     drawNumArr.current.push(id);
-    allShapeJson.current[id] = { label, shape_type, hide, attrs: newAttrs };
+    allShapeJson.current[id] = {
+      label,
+      shape_type,
+      hide,
+      attrs: newAttrs,
+      rotate: newRotate,
+    };
     if (label) {
       addLabel(id, label, shape_type !== 'rect');
     }
@@ -2741,9 +3082,10 @@ const WDraw = forwardRef((props: any, ref) => {
         shapeBox = svgCont.current.select('#shape');
       sizeArr.forEach((item: any) => {
         // console.log(item);
-        let { attrs, id, hide, label, shape_type } = item,
+        let { attrs, id, hide, label, shape_type, rotate } = item,
           curShape: any = null,
-          newAttrs = null;
+          newAttrs = null,
+          newRotate = null;
 
         // 矩形、椭圆形
         if (shape_type === 'rect' || shape_type === 'ellipse') {
@@ -2791,6 +3133,14 @@ const WDraw = forwardRef((props: any, ref) => {
             [attrNames.w]: w,
             [attrNames.h]: h,
           };
+          if (rotate) {
+            const { centerX, centerY } = getRotateCenter(id);
+            newRotate = [rotate, centerX, centerY];
+            curShape.attr(
+              'transform',
+              `rotate(${rotate} ${centerX},${centerY})`,
+            );
+          }
         } else {
           // 多边形
           if (!id) {
@@ -2831,9 +3181,18 @@ const WDraw = forwardRef((props: any, ref) => {
           curShape.attr('d', pointString);
 
           newAttrs = { points: newPoints };
+
+          if (rotate) {
+            const { centerX, centerY } = getRotateCenter(id);
+            newRotate = [rotate, centerX, centerY];
+            curShape.attr(
+              'transform',
+              `rotate(${rotate} ${centerX},${centerY})`,
+            );
+          }
         }
         item.id = id;
-        updateFromSize(id, shape_type, label, hide, newAttrs);
+        updateFromSize(id, shape_type, label, hide, newAttrs, newRotate);
       });
       tempProps.current.changeBindColor(labelColorJson.current);
       if (update) {
@@ -2891,6 +3250,9 @@ const WDraw = forwardRef((props: any, ref) => {
     }
     if (props.showCrosshair !== tempProps.current.showCrosshair) {
       toggleCrosshair(props.showCrosshair);
+    }
+    if (props.rotateEnable !== tempProps.current.rotateEnable) {
+      toggleRotate(props.rotateEnable);
     }
     tempProps.current = props;
 
@@ -2951,6 +3313,7 @@ WDraw.defaultProps = {
   drawTool: '', // 默认绘制工具（rect、ellipse、path、move、drag）
   scaleExtent: [0.02, 30], // 图形缩放比例阀值
   colorBindLabel: true, // 颜色跟标签绑定
+  rotateEnable: false, // 能否旋转
   // changeTool: () => { }, // 变更工具
   changeSize: () => {}, // 尺寸、位置发生变化
   changeBindColor: () => {}, // 颜色绑定标签时，标签颜色发生变化
