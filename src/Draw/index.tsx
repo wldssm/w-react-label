@@ -14,6 +14,7 @@ import {
   getAfterRotate,
   getRandomColor,
   getRotateCenterDiff,
+  isShapeInRange,
   isTouchEvent,
   pointToLineDistance,
   shapeInfo,
@@ -31,21 +32,25 @@ const WDraw = forwardRef((props: any, ref) => {
     svgRoot: any = useRef(null),
     svgCont: any = useRef(null),
     curShape: any = useRef(null), // 正在绘制的图像，即拖拽点出现的图像，而不是蒙版出现的。因为绘制完图形可以直接拖动控制点修改。
+    tempShape: any = useRef(null), // 拖拽绘制结束前的图像
+    // id
     maskShapeId: any = useRef(null), // 有蒙版的元素id
     editPathId: any = useRef(null), // 可以编辑顶点的path的id
     selectedGripId: any = useRef(''), // 选中的grip（拖拽点）
     selectedPointId: any = useRef(null), // 选中的顶点
-    lineCreater: any = useRef(null), // d3.line()，为了生成path的节点
-    curTransform: any = useRef(null), // 当前缩放transform
-    startInfo: any = useRef({ x: 0, y: 0, w: 0, h: 0, mx: 0, my: 0 }), // 临时初始数据
+    selectShapeIds: any = useRef(null), // 多选选中的图形id
+    copyIds: any = useRef(null),
+    // 状态
     isDrawing = useRef(false), // 是否绘制rect、ellipse中
     isPathing = useRef(false), // 是否绘制path中
     isMoving = useRef(false), // drag、zoom是否执行了drag\zoom方法，即是否移动，还是只有单击
-    drawNumArr: any = useRef([]), // 记录已绘制的图形num编号
+    // d3
+    lineCreater: any = useRef(null), // d3.line()，为了生成path的节点
+    curTransform: any = useRef(null), // 当前缩放transform
     curScale = useRef('1'), // 画布的scale
     curImgInfo = useRef({ x: 0, y: 0, scale: 1, w: 0, h: 0 }), // 图片初始展示信息
-    selectShapeIds: any = useRef(null), // 多选选中的图形id
-    copyIds: any = useRef(null),
+    startInfo: any = useRef({ x: 0, y: 0, w: 0, h: 0, mx: 0, my: 0 }), // 临时初始数据
+    drawNumArr: any = useRef([]), // 记录已绘制的图形num编号
     imgFilterStr: any = useRef(''), // 图片的调整样式
     // 按键
     isCtrlKey: any = useRef(false), // ctrl是否按下。为了兼容触摸屏touch事件的ctrl始终为false
@@ -119,7 +124,7 @@ const WDraw = forwardRef((props: any, ref) => {
   };
 
   // 计算当前图形的编号，递增插入
-  const getCurNum = () => {
+  const getCurNum = (add = true) => {
     let len = drawNumArr.current.length || 0,
       curNum: any = 0;
     for (let i = 0; i < len; i++) {
@@ -130,7 +135,9 @@ const WDraw = forwardRef((props: any, ref) => {
     }
     if (curNum === 0) curNum = len + 1;
     curNum = '' + curNum;
-    drawNumArr.current.splice(curNum - 1, 0, curNum);
+    if (add) {
+      drawNumArr.current.splice(curNum - 1, 0, curNum);
+    }
     return curNum;
   };
 
@@ -150,18 +157,18 @@ const WDraw = forwardRef((props: any, ref) => {
       curH = 0;
 
     if (drawTool === 'rect') {
-      curW = curShape.current.attr('width');
-      curH = curShape.current.attr('height');
+      curW = tempShape.current.attr('width');
+      curH = tempShape.current.attr('height');
     } else if (drawTool === 'ellipse') {
-      curW = curShape.current.attr('rx') * 2 || 0;
-      curH = curShape.current.attr('ry') * 2 || 0;
+      curW = tempShape.current.attr('rx') * 2 || 0;
+      curH = tempShape.current.attr('ry') * 2 || 0;
     }
 
     if (+curW <= minSize[0] || +curH <= minSize[1]) {
       // 宽或高小于
       // console.log(88, 'mouseUp，尺寸过小');
-      curShape.current.remove();
-      curShape.current = null;
+      tempShape.current.remove();
+      tempShape.current = null;
       d3.select('#shape-grip-group').attr('display', 'none');
       return true;
     }
@@ -445,18 +452,29 @@ const WDraw = forwardRef((props: any, ref) => {
 
   // 设置绘制图形颜色（指定标签）
   const setDrawColor = (labelParam?: any) => {
-    const { curLabel, colorBindLabel }: any = tempProps.current,
-      tempLabel = labelParam || curLabel;
+    const { curLabel, colorBindLabel }: any = tempProps.current;
+    let tempLabel = 0, // 不绑定标签则绑定分组
+      curLabelColor = '';
 
     if (colorBindLabel) {
-      const curLabelColor =
+      tempLabel = labelParam || curLabel;
+      if (!tempLabel) {
+        // 绘制图形，未指定标签
+        tempLabel = getCurNum(false);
+      }
+      curLabelColor =
         labelColorJson.current[tempLabel] ||
         getRandomColor(labelColorJson.current);
-      shapeInfo.shapeCommon.stroke = curLabelColor;
-      shapeInfo.font.fill = curLabelColor;
-      if (labelParam) {
-        labelColorJson.current[tempLabel] = curLabelColor;
-      }
+    } else {
+      curLabelColor =
+        labelColorJson.current[tempLabel] || getRandomColor(tempLabel);
+    }
+
+    shapeInfo.shapeCommon.stroke = curLabelColor;
+    shapeInfo.font.fill = curLabelColor;
+
+    if (labelParam) {
+      labelColorJson.current[tempLabel] = curLabelColor;
     }
   };
   // 设置蒙版颜色
@@ -478,13 +496,11 @@ const WDraw = forwardRef((props: any, ref) => {
   };
   // 切换色块（改变当前和以后的绘制）
   const changeColor = (color: string) => {
-    const { colorBindLabel, curLabel: lastLabel } = tempProps.current;
-    if (colorBindLabel) {
-      if (selectShapeIds.current || !curShape.current) return;
+    if (tempProps.current.colorBindLabel) {
+      if (selectShapeIds.current || !curShape.current) return; // 懒得写选中的图形有多个标签
 
       const curId = curShape.current.attr('id')?.substring(6),
-        { label: curLabel } = allShapeJson.current?.[curId],
-        lastLabelColor = labelColorJson.current[lastLabel];
+        { label: curLabel } = allShapeJson.current?.[curId];
 
       // 同标签变色
       Object.keys(allShapeJson.current)?.forEach((item) => {
@@ -493,17 +509,14 @@ const WDraw = forwardRef((props: any, ref) => {
           changeSingleShapeColor(item, color);
         }
       });
-      if (lastLabelColor) {
-        shapeInfo.shapeCommon.stroke = lastLabelColor;
-        shapeInfo.font.fill = lastLabelColor;
-      }
       labelColorJson.current[curLabel] = color;
       tempProps.current.changeBindColor(labelColorJson.current);
       return;
     }
 
-    shapeInfo.shapeCommon.stroke = color;
-    shapeInfo.font.fill = color;
+    // 分组
+    labelColorJson.current[0] = color;
+    tempProps.current.changeBindColor(labelColorJson.current);
 
     if (selectShapeIds.current) {
       selectShapeIds.current?.forEach((item: any) => {
@@ -1234,7 +1247,7 @@ const WDraw = forwardRef((props: any, ref) => {
       diffX = posi[0] - centerX,
       diffY = centerY - posi[1];
     let rotateAngle = (Math.atan2(diffY, diffX) * 180) / Math.PI; // 两点之间的倾斜角。
-    // 正常坐标系（上90，右0，下-90，左180度），改为（上0，下180，左正，右负）
+    // 正常坐标系（上90，右0，下-90，左180度），改为（上0，下180，左负，右正）
     if (rotateAngle < -90) {
       rotateAngle = -270 - rotateAngle;
     } else {
@@ -1499,11 +1512,18 @@ const WDraw = forwardRef((props: any, ref) => {
 
     let curNum = curShape.current.attr('id')?.substring('6'), // 当前默认编号
       { curLabel, colorBindLabel }: any = tempProps.current;
-    if (colorBindLabel && curLabel && !labelColorJson.current[curLabel]) {
-      labelColorJson.current[curLabel] = shapeInfo.shapeCommon.stroke;
+    curLabel = curLabel || curNum;
+
+    if (!labelColorJson.current[curLabel]) {
+      if (colorBindLabel) {
+        labelColorJson.current[curLabel] = shapeInfo.shapeCommon.stroke;
+      } else {
+        // 分组
+        labelColorJson.current[0] = shapeInfo.shapeCommon.stroke;
+      }
       tempProps.current.changeBindColor(labelColorJson.current);
     }
-    curLabel = curLabel || curNum;
+
     allShapeJson.current[curNum] = {
       shape_type: close ? 'polygon' : 'line',
       label: curLabel,
@@ -1730,13 +1750,121 @@ const WDraw = forwardRef((props: any, ref) => {
     }
   };
 
+  // 开始拖拽绘制图形（矩形、椭圆形）
+  const startMoveDraw = (e: any, drawTool: string) => {
+    // console.log("");
+    // console.log('start');
+    // console.log('start', e);
+    let posi = getD3Posi(e);
+
+    isDrawing.current = true;
+    tempShape.current = svgCont.current
+      .select('#shape')
+      .append(drawTool)
+      .call(initDrag('shape', dragChange));
+
+    // 设置颜色
+    setDrawColor();
+    let shapeAttrs = Object.assign(
+        {},
+        shapeInfo.shapeCommon,
+        shapeInfo[drawTool],
+      ),
+      attrX = 'x',
+      attrY = 'y';
+    if (drawTool === 'ellipse') {
+      attrX = 'cx';
+      attrY = 'cy';
+    }
+
+    [startInfo.current.x, startInfo.current.y] = posi;
+    [shapeAttrs[attrX], shapeAttrs[attrY]] = posi;
+    Object.keys(shapeAttrs).forEach((key) => {
+      tempShape.current.attr(key, shapeAttrs[key]);
+    });
+    return false;
+  };
+  // 拖拽绘制图形（矩形【shift正方形】、椭圆形【shift圆形】）
+  const moveDraw = (e: any, drawTool: string) => {
+    // console.log("");
+    // console.log('move', e);
+    if (!tempShape.current || !isDrawing.current) return false;
+
+    let posi = getD3Posi(e),
+      { x, y } = startInfo.current,
+      moveX = posi[0] - x,
+      moveY = posi[1] - y;
+
+    // 矩形
+    if (drawTool === 'rect') {
+      let width = Math.abs(moveX),
+        height = Math.abs(moveY);
+      // 修改坐标
+      if (moveX < 0) {
+        if (isShiftKey.current && width < height) {
+          x = x - height;
+        } else {
+          x = posi[0];
+        }
+      }
+      if (moveY < 0) {
+        if (isShiftKey.current && width > height) {
+          y = y - width;
+        } else {
+          y = posi[1];
+        }
+      }
+      // 修改尺寸（选大的边）
+      if (isShiftKey.current) {
+        if (width > height) {
+          height = width;
+        } else {
+          width = height;
+        }
+      }
+      curShapePoints.current = { x, y, width, height };
+      tempShape.current
+        .attr('x', x)
+        .attr('y', y)
+        .attr('width', width)
+        .attr('height', height);
+      return false;
+    }
+    // 椭圆形
+    if (drawTool === 'ellipse') {
+      let midMoveX = moveX / 2 || 0,
+        midMoveY = moveY / 2 || 0,
+        rx = Math.abs(midMoveX),
+        ry = Math.abs(midMoveY);
+      if (isShiftKey.current) {
+        // 选大的边
+        if (rx > ry) {
+          midMoveY = midMoveY > 0 ? rx : -rx;
+          ry = rx;
+        } else {
+          midMoveX = midMoveX > 0 ? ry : -ry;
+          rx = ry;
+        }
+      }
+      x = x + midMoveX;
+      y = y + midMoveY;
+      curShapePoints.current = { cx: x, cy: y, rx, ry };
+      tempShape.current
+        .attr('cx', x)
+        .attr('cy', y)
+        .attr('rx', rx)
+        .attr('ry', ry);
+    }
+    return false;
+  };
   // 结束拖拽绘制图形
   const endMoveDraw = () => {
-    // console.log('stop', e);
-    if (!curShape.current || !isDrawing.current) return false;
+    // console.log('stop');
+    if (!tempShape.current || !isDrawing.current) return false;
 
     isDrawing.current = false;
 
+    selectShapeIds.current = null;
     delEditStatus();
 
     let ifMini = delShapeIfMini();
@@ -1744,12 +1872,21 @@ const WDraw = forwardRef((props: any, ref) => {
 
     let { drawTool, curLabel, colorBindLabel }: any = tempProps.current,
       curNum = getCurNum(); // 当前默认编号
-    if (colorBindLabel && curLabel && !labelColorJson.current[curLabel]) {
-      labelColorJson.current[curLabel] = shapeInfo.shapeCommon.stroke;
+    curLabel = curLabel || curNum;
+
+    if (!labelColorJson.current[curLabel]) {
+      if (colorBindLabel) {
+        labelColorJson.current[curLabel] = shapeInfo.shapeCommon.stroke;
+      } else {
+        // 分组
+        labelColorJson.current[0] = shapeInfo.shapeCommon.stroke;
+      }
       tempProps.current.changeBindColor(labelColorJson.current);
     }
-    curLabel = curLabel || curNum;
-    curShape.current.attr('id', `shape-${curNum}`);
+
+    tempShape.current.attr('id', `shape-${curNum}`);
+    curShape.current = tempShape.current;
+    tempShape.current = null;
 
     allShapeJson.current[curNum] = {
       shape_type: drawTool,
@@ -1786,33 +1923,24 @@ const WDraw = forwardRef((props: any, ref) => {
   };
   // 判断元素是否进入框选区域
   const selectNodesInRange = () => {
+    d3.selectAll('#shape-path-group *')?.attr('display', 'none');
+
     let selectBox = d3.select('#shape-selector').node().getBoundingClientRect(),
       shapeIds = Object.keys(allShapeJson.current),
       selectIds: any = [],
-      curScale = curTransform?.current?.k || 1;
+      curScale = curTransform?.current?.k || 1,
+      curPathIndex = 0;
 
     shapeIds?.forEach((item) => {
       let curShape = d3.select(`#shape-${item}`),
-        curLen = selectIds.length,
-        curShapePath = d3.select(`#shape-path-group #shape-path-${curLen}`),
         curShapeInfo = curShape.node().getBoundingClientRect(),
-        shapeInRange =
-          curShapeInfo.bottom > selectBox.top &&
-          curShapeInfo.top < selectBox.bottom &&
-          curShapeInfo.left < selectBox.right &&
-          curShapeInfo.right > selectBox.left;
+        shapeInRange = isShapeInRange(curShapeInfo, selectBox);
 
       if (shapeInRange) {
         // 进入范围边框的变色
         selectIds.push(item);
 
         let { x, y, width, height } = curShape.node().getBBox();
-
-        if (!curShapePath.node()) {
-          curShapePath = addSelectPath(curLen);
-        } else {
-          curShapePath.attr('display', 'inline').attr('transform', null);
-        }
         x = x * curScale || 0;
         y = y * curScale || 0;
         width = width * curScale || 0;
@@ -1825,6 +1953,8 @@ const WDraw = forwardRef((props: any, ref) => {
             [x - 2, y + height + 2],
           ],
           pointString = lineCreater.current(points);
+
+        const curShapePath = addSelectPath(curPathIndex);
         curShapePath.attr('d', pointString + 'Z');
 
         // 更新旋转中心点
@@ -1838,8 +1968,7 @@ const WDraw = forwardRef((props: any, ref) => {
             `rotate(${rotateAngle} ${gripCenterX},${gripCenterY})`,
           );
         }
-      } else {
-        curShapePath?.attr('display', 'none');
+        curPathIndex = curPathIndex + 1;
       }
     });
     selectShapeIds.current = selectIds?.length && selectIds;
@@ -1854,9 +1983,7 @@ const WDraw = forwardRef((props: any, ref) => {
       { x, y } = startInfo.current,
       moveX = posi[0] - x,
       moveY = posi[1] - y,
-      curScale = curTransform?.current?.k || 1;
-
-    let width = Math.abs(moveX),
+      width = Math.abs(moveX),
       height = Math.abs(moveY);
 
     if (moveX < 0) {
@@ -1865,10 +1992,7 @@ const WDraw = forwardRef((props: any, ref) => {
     if (moveY < 0) {
       y = posi[1];
     }
-    x = x * curScale || 0;
-    y = y * curScale || 0;
-    width = width * curScale || 0;
-    height = height * curScale || 0;
+
     d3.select('#shape-related-group #shape-selector')
       .attr('x', x)
       .attr('y', y)
@@ -1945,16 +2069,20 @@ const WDraw = forwardRef((props: any, ref) => {
     return d3
       .drag()
       .filter(function (event: any) {
-        getFocus();
+        // 没有禁止冒泡时。若返回false会冒泡到父元素。true则直接当前元素执行。
+        if (event?.touches?.length > 1) return false;
+
         ({ drawTool } = tempProps.current);
         curTarget = d3.select(this);
         curOpera = getCurOpera(type, drawTool, curTarget);
 
         if (!drawTool) return false;
-        return (
-          !event.button ||
-          (event.button === 2 && isPathing.current && curOpera === 'path')
-        );
+        getFocus();
+
+        if (type === 'shape') {
+          return curOpera === 'moveShape';
+        }
+        return true;
       })
       .on('start', function (event: any) {
         event?.sourceEvent?.stopPropagation();
@@ -2048,7 +2176,6 @@ const WDraw = forwardRef((props: any, ref) => {
             moveDraw(event, drawTool);
           } else {
             // 不放在start里面是因为start一定会执行，没拖动也执行
-            selectShapeIds.current = null;
             startMoveDraw(event, drawTool);
           }
           return;
@@ -2100,7 +2227,13 @@ const WDraw = forwardRef((props: any, ref) => {
           }
         } else if (!isSelect) {
           // 未拖动执行单击
-          clickCanvas(type, event, curTarget);
+          curTarget = d3.select(event?.sourceEvent?.target);
+          let clickType = type;
+          if (type === 'whole' && curTarget.attr('id')?.indexOf('shape') >= 0) {
+            // 处理filter为false冒泡到whole的情况。不冒泡的话移动端无法双指放大。
+            clickType = 'shape';
+          }
+          clickCanvas(clickType, event, curTarget);
           return;
         }
       });
@@ -2114,13 +2247,19 @@ const WDraw = forwardRef((props: any, ref) => {
       .zoom()
       .scaleExtent(tempProps.current?.scaleExtent)
       .filter(function (event: any) {
-        return (!event.ctrlKey || event.type === 'wheel') && !event.button;
+        event?.stopPropagation();
+        event?.preventDefault();
+
+        getFocus();
+
+        if (event?.touches?.length > 1) return true;
+        return event.type === 'wheel';
       })
       .on('start', function (event: any) {
         ({ drawTool } = tempProps.current);
         // console.log("");
         // console.log(1, 'zoomstart');
-        getFocus();
+
         event?.sourceEvent?.stopPropagation();
         event?.sourceEvent?.preventDefault();
 
@@ -2146,8 +2285,8 @@ const WDraw = forwardRef((props: any, ref) => {
       });
   };
   // 拖动、放大整体
-  const zoomWhole = (event: any, isZoom = true) => {
-    if (isZoom) {
+  const zoomWhole = (event?: any) => {
+    if (event) {
       curTransform.current = event.transform;
     }
 
@@ -2159,16 +2298,14 @@ const WDraw = forwardRef((props: any, ref) => {
       .attr(
         'transform',
         `translate(${curTransform.current.x}, ${curTransform.current.y})`,
-      );
+      )
+      .select('#shape-selector')
+      .attr('transform', `scale(${curTransform.current.k})`);
     if (selectShapeIds.current?.length) {
       updateSelectPath();
     } else {
       updateGrip();
-      if (isZoom) {
-        updatePoint(event);
-      } else {
-        updatePoint();
-      }
+      updatePoint(event);
     }
 
     updateAllLabel();
@@ -2232,114 +2369,6 @@ const WDraw = forwardRef((props: any, ref) => {
     tempProps.current.changeSelect(getSelectIds());
 
     insertStack('add', curShape.current);
-  };
-
-  // 开始拖拽绘制图形（矩形、椭圆形）
-  const startMoveDraw = (e: any, drawTool: string) => {
-    // console.log("");
-    // console.log('start', e.subject);
-    // console.log('start', e);
-    let posi = getD3Posi(e);
-
-    isDrawing.current = true;
-    curShape.current = svgCont.current
-      .select('#shape')
-      .append(drawTool)
-      .call(initDrag('shape', dragChange));
-
-    // 设置颜色
-    setDrawColor();
-    let shapeAttrs = Object.assign(
-        {},
-        shapeInfo.shapeCommon,
-        shapeInfo[drawTool],
-      ),
-      attrX = 'x',
-      attrY = 'y';
-    if (drawTool === 'ellipse') {
-      attrX = 'cx';
-      attrY = 'cy';
-    }
-
-    [startInfo.current.x, startInfo.current.y] = posi;
-    [shapeAttrs[attrX], shapeAttrs[attrY]] = posi;
-    Object.keys(shapeAttrs).forEach((key) => {
-      curShape.current.attr(key, shapeAttrs[key]);
-    });
-    return false;
-  };
-  // 拖拽绘制图形（矩形【shift正方形】、椭圆形【shift圆形】）
-  const moveDraw = (e: any, drawTool: string) => {
-    // console.log("");
-    // console.log('move', e);
-    if (!curShape.current || !isDrawing.current) return false;
-
-    let posi = getD3Posi(e),
-      { x, y } = startInfo.current,
-      moveX = posi[0] - x,
-      moveY = posi[1] - y;
-
-    // 矩形
-    if (drawTool === 'rect') {
-      let width = Math.abs(moveX),
-        height = Math.abs(moveY);
-      // 修改坐标
-      if (moveX < 0) {
-        if (isShiftKey.current && width < height) {
-          x = x - height;
-        } else {
-          x = posi[0];
-        }
-      }
-      if (moveY < 0) {
-        if (isShiftKey.current && width > height) {
-          y = y - width;
-        } else {
-          y = posi[1];
-        }
-      }
-      // 修改尺寸（选大的边）
-      if (isShiftKey.current) {
-        if (width > height) {
-          height = width;
-        } else {
-          width = height;
-        }
-      }
-      curShapePoints.current = { x, y, width, height };
-      curShape.current
-        .attr('x', x)
-        .attr('y', y)
-        .attr('width', width)
-        .attr('height', height);
-      return false;
-    }
-    // 椭圆形
-    if (drawTool === 'ellipse') {
-      let midMoveX = moveX / 2 || 0,
-        midMoveY = moveY / 2 || 0,
-        rx = Math.abs(midMoveX),
-        ry = Math.abs(midMoveY);
-      if (isShiftKey.current) {
-        // 选大的边
-        if (rx > ry) {
-          midMoveY = midMoveY > 0 ? rx : -rx;
-          ry = rx;
-        } else {
-          midMoveX = midMoveX > 0 ? ry : -ry;
-          rx = ry;
-        }
-      }
-      x = x + midMoveX;
-      y = y + midMoveY;
-      curShapePoints.current = { cx: x, cy: y, rx, ry };
-      curShape.current
-        .attr('cx', x)
-        .attr('cy', y)
-        .attr('rx', rx)
-        .attr('ry', ry);
-    }
-    return false;
   };
 
   // 切换tool
@@ -2553,12 +2582,13 @@ const WDraw = forwardRef((props: any, ref) => {
 
     // 2、添加svgCont
     svgCont.current = svgRoot.current.append('svg').attr('id', 'svgcont'); // .attr('fill', bgColor)
-    // 2.1添加g放置图片和图形
+    // 2.1添加g放置图片
     svgCont.current
       .append('g')
       .attr('class', 'layer')
       .attr('id', 'img')
       .style('pointer-events', 'none');
+    // 放置图形
     svgCont.current.append('g').attr('class', 'layer').attr('id', `shape`);
 
     // 3、放置图形相关的控制点、控制线
@@ -2691,13 +2721,13 @@ const WDraw = forwardRef((props: any, ref) => {
     svgRoot.current
       // .on('click', (...params) => clickCanvas('whole', ...params))
       .on('mousemove touchmove', mouseMove)
-      .call(initDrag('whole', dragChange))
       .call(
         initZoom((event: any) => {
           zoomWhole(event);
         }),
       )
-      .on('dblclick.zoom', null);
+      .on('dblclick.zoom', null)
+      .call(initDrag('whole', dragChange));
 
     d3.selectAll('#shape-grip-group rect').call(initDrag('grip', dragChange));
     svgRoot.current
@@ -2908,22 +2938,14 @@ const WDraw = forwardRef((props: any, ref) => {
     svgRoot.current.select(`#shape-label-${id}`).text(newLabel);
     tempProps.current.changeSize(getMarkData());
 
-    const { colorBindLabel, curLabel } = tempProps.current;
-    if (colorBindLabel) {
-      let curColor = '',
-        update = labelColorJson.current[newLabel];
-      if (!curLabel) {
-        curColor = shapeInfo.shapeCommon.stroke;
-      } else {
-        curColor =
-          labelColorJson.current[newLabel] ||
-          getRandomColor(labelColorJson.current);
-      }
-      changeSingleShapeColor(id, curColor);
-      if (!update) {
+    if (tempProps.current.colorBindLabel) {
+      let curColor = labelColorJson.current[newLabel];
+      if (!curColor) {
+        curColor = getRandomColor(labelColorJson.current);
         labelColorJson.current[newLabel] = curColor;
         tempProps.current.changeBindColor(labelColorJson.current);
       }
+      changeSingleShapeColor(id, curColor);
     }
   };
 
@@ -2948,7 +2970,7 @@ const WDraw = forwardRef((props: any, ref) => {
     initZoom().scaleTo(svgRoot.current, scaleNum);
     curTransform.current = d3.zoomTransform(svgRoot.current.node());
 
-    zoomWhole(curTransform.current, false);
+    zoomWhole();
   };
 
   // 转换数据格式：attr=》points
@@ -3238,6 +3260,9 @@ const WDraw = forwardRef((props: any, ref) => {
     if (props.src !== tempProps.current.src) {
       loadImg(props.src);
     }
+    if (props.shapeGroup !== tempProps.current.shapeGroup) {
+      init();
+    }
     if (props.drawTool !== tempProps.current.drawTool) {
       switchDrawTool(props.drawTool);
       toggleCrosshair(props.showCrosshair);
@@ -3314,6 +3339,9 @@ WDraw.defaultProps = {
   scaleExtent: [0.02, 30], // 图形缩放比例阀值
   colorBindLabel: true, // 颜色跟标签绑定
   rotateEnable: false, // 能否旋转
+  // 分组
+  shapeGroup: 1, // 分组
+  curGroup: 0, // 当前分组
   // changeTool: () => { }, // 变更工具
   changeSize: () => {}, // 尺寸、位置发生变化
   changeBindColor: () => {}, // 颜色绑定标签时，标签颜色发生变化

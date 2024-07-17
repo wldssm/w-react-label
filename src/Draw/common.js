@@ -336,7 +336,7 @@ const colors = [
 //   return 'rgb(' + r + ',' + g + ',' + b + ')';
 // };
 export const getRandomColor = (obj) => {
-  const len = Object.keys(obj).length;
+  const len = isNaN(obj) ? Object.keys(obj).length : obj;
   return 'rgb(' + colors[len] + ')';
 };
 
@@ -572,6 +572,16 @@ export const pointToLineDistance = (clickPosi, lineStart, lineEnd) => {
   }
 
   return Math.sqrt(dx * dx + dy * dy);
+};
+
+// 判断图形有没有相交（DOMRect）
+export const isShapeInRange = (shapeBox, boundingBox) => {
+  return (
+    shapeBox.bottom > boundingBox.top &&
+    shapeBox.top < boundingBox.bottom &&
+    shapeBox.left < boundingBox.right &&
+    shapeBox.right > boundingBox.left
+  );
 };
 
 // 一个点相对另一个点旋转前、后的坐标
