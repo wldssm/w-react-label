@@ -1731,6 +1731,7 @@ const WDraw = forwardRef((props: any, ref) => {
     // 插入顶点
     if (type === 'insertPoint') {
       insertPoint(event);
+      tempProps.current.changeSize(getMarkData());
       return;
     }
 
